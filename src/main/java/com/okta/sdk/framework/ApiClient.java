@@ -5,14 +5,20 @@ import com.okta.sdk.exceptions.ApiException;
 import com.okta.sdk.exceptions.SdkException;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
-import org.apache.http.client.HttpClient;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.NTCredentials;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.slf4j.Logger;
@@ -33,7 +39,8 @@ public abstract class ApiClient {
     public static final String FILTER = "filter";
     public static final String SEARCH_QUERY = "q";
 
-    protected HttpClient httpClient;
+    protected CredentialsProvider credsProvider;
+    protected CloseableHttpClient httpClient;
     protected String baseUrl;
     protected int apiVersion;
     protected String token;
@@ -47,16 +54,19 @@ public abstract class ApiClient {
     public ApiClient(ApiClientConfiguration config) {
         this(HttpClientBuilder.create()
                         .setUserAgent("OktaSDKJava_v" + Utils.getSdkVersion())
-                        .disableCookieManagement().build(),
+                        .disableCookieManagement().setProxy(config.getProxyUrl() == null ? null : new HttpHost(config.getProxyUrl(), config.getProxyPort(), config.getProxyScheme())).build(),
                 config);
     }
 
-    protected ApiClient(HttpClient httpClient, ApiClientConfiguration config) {
+    protected ApiClient(CloseableHttpClient httpClient, ApiClientConfiguration config) {
         this.httpClient = httpClient;
         this.baseUrl = config.getBaseUrl();
         this.apiVersion = config.getApiVersion();
         this.configuration = config;
         this.token = config.getApiToken();
+
+        credsProvider = new BasicCredentialsProvider();
+        credsProvider.setCredentials(AuthScope.ANY, new NTCredentials(System.getProperty("user.name"), "", "", ""));
 
         initMarshaller();
     }
@@ -198,7 +208,9 @@ public abstract class ApiClient {
     }
 
     protected HttpResponse doExecute(HttpUriRequest httpUriRequest) throws IOException {
-        return httpClient.execute(httpUriRequest);
+        final HttpClientContext context = HttpClientContext.create();
+        context.setCredentialsProvider(credsProvider);
+        return httpClient.execute(httpUriRequest, context);
     }
 
     ////////////////////////////////////////////
